@@ -656,33 +656,34 @@ public class CommandClientImpl implements CommandClient, EventListener
         }
     }
 
-    private void onMessageDelete(MessageDeleteEvent event)
-    {
-        // We don't need to cover whether or not this client usesLinkedDeletion() because
-        // that is checked in onEvent(Event) before this is even called.
+    private void onMessageDelete(MessageDeleteEvent event) {
         synchronized (linkMap) {   
-            long messageId = event.getMessageIdLong();
-            if (linkMap.containsKey(messageId)) {    
-                Set<Message> messages = linkMap.get(messageId);
-                if (messages != null && !messages.isEmpty()) {
-                    if (event.getGuild().getSelfMember().hasPermission(event.getChannel(), Permission.MESSAGE_MANAGE)) {
-                        if (messages.size() > 1) {
-                            List<Long> messageIds = messages.stream()
-                                .map(Message::getIdLong)
-                                .collect(Collectors.toList());  
-                            event.getChannel().deleteMessagesByIds(messageIds).queue(
-                                unused -> {}, 
-                                ignored -> {}
-                            );
-                        } else {                 
-                            messages.forEach(m -> m.delete().queue(
-                                unused -> {}, 
-                                ignored -> {}                          
-                            ));
-                        }
-                    } else {
-                        // Add Logic if needed .. 
+            long messageId = event.getMessageIdLong();   
+            Set<Message> messages = linkMap.get(messageId);
+
+            if (messages != null && !messages.isEmpty()) {
+                if (event.getChannel() instanceof TextChannel) {
+                    TextChannel textChannel = (TextChannel) event.getChannel();
+                    int messageCount = messages.size();
+                    
+                    if (messages.size() > 1 && event.getGuild().getSelfMember()
+                            .hasPermission(textChannel, Permission.MESSAGE_MANAGE)) {
+                        List<Long> messageIds = messages.stream()
+                            .map(Message::getIdLong)
+                            .collect(Collectors.toList());  
+                        textChannel.deleteMessagesByIds(messageIds).queue(
+                            unused -> {}, 
+                            ignored -> {}
+                        );
+                    } else {                 
+                        messages.forEach(m -> m.delete().queue(
+                            unused -> {}, 
+                            ignored -> {}                          
+                        ));
                     }
+                } else {
+                    // Handle the case where the channel is not a TextChannel
+                    System.out.println("The channel is not a TextChannel, unable to delete messages.");
                 }
             }
         }
