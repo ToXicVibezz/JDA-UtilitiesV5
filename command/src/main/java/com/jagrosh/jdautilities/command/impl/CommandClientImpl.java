@@ -19,6 +19,7 @@ import com.jagrosh.jdautilities.command.*;
 import com.jagrosh.jdautilities.command.Command.Category;
 import com.jagrosh.jdautilities.commons.utils.FixedSizeCache;
 import com.jagrosh.jdautilities.commons.utils.SafeIdUtil;
+
 import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.OnlineStatus;
 import net.dv8tion.jda.api.Permission;
@@ -29,7 +30,7 @@ import net.dv8tion.jda.api.events.ShutdownEvent;
 import net.dv8tion.jda.api.events.guild.GuildJoinEvent;
 import net.dv8tion.jda.api.events.guild.GuildLeaveEvent;
 import net.dv8tion.jda.api.events.message.MessageReceivedEvent;
-import net.dv8tion.jda.api.events.message.guild.MessageDeleteEvent;
+import net.dv8tion.jda.api.events.message.MessageDeleteEvent;
 import net.dv8tion.jda.api.hooks.EventListener;
 import net.dv8tion.jda.internal.utils.Checks;
 import okhttp3.*;
@@ -659,16 +660,30 @@ public class CommandClientImpl implements CommandClient, EventListener
     {
         // We don't need to cover whether or not this client usesLinkedDeletion() because
         // that is checked in onEvent(Event) before this is even called.
-        synchronized(linkMap)
-        {
-            if(linkMap.contains(event.getMessageIdLong()))
-            {
-                Set<Message> messages = linkMap.get(event.getMessageIdLong());
-                if(messages.size()>1 && event.getGuild().getSelfMember()
-                        .hasPermission(event.getChannel(), Permission.MESSAGE_MANAGE))
-                    event.getChannel().deleteMessages(messages).queue(unused -> {}, ignored -> {});
-                else if(messages.size()>0)
-                    messages.forEach(m -> m.delete().queue(unused -> {}, ignored -> {}));
+        synchronized (linkMap) {   
+            long messageId = event.getMessageIdLong();
+            if (linkMap.containsKey(messageId)) {    
+                Set<Message> messages = linkMap.get(messageId);
+                if (messages != null && !messages.isEmpty()) {
+                    if (event.getGuild().getSelfMember().hasPermission(event.getChannel(), Permission.MESSAGE_MANAGE)) {
+                        if (messages.size() > 1) {
+                            List<Long> messageIds = messages.stream()
+                                .map(Message::getIdLong)
+                                .collect(Collectors.toList());  
+                            event.getChannel().deleteMessagesByIds(messageIds).queue(
+                                unused -> {}, 
+                                ignored -> {}
+                            );
+                        } else {                 
+                            messages.forEach(m -> m.delete().queue(
+                                unused -> {}, 
+                                ignored -> {}                          
+                            ));
+                        }
+                    } else {
+                        // Add Logic if needed .. 
+                    }
+                }
             }
         }
     }
