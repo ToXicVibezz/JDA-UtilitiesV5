@@ -99,7 +99,7 @@ public class CommandClientImpl implements CommandClient, EventListener
     public CommandClientImpl(String ownerId, String[] coOwnerIds, String prefix, String altprefix, Activity activity, OnlineStatus status, String serverInvite,
                              String success, String warning, String error, String carbonKey, String botsKey, ArrayList<Command> commands,
                              boolean useHelp, boolean shutdownAutomatically, Consumer<CommandEvent> helpConsumer, String helpWord, ScheduledExecutorService executor,
-                             int linkedCacheSize, AnnotatedModuleCompiler compiler, GuildSettingsManager manager)
+                             int linkedCacheSize, AnnotatedModuleCompiler compiler, GuildSettingsManager<?> manager)
     {
         Checks.check(ownerId != null, "Owner ID was set null or not set! Please provide an User ID to register as the owner!");
 
@@ -414,29 +414,44 @@ public class CommandClientImpl implements CommandClient, EventListener
         return linkMap != null;
     }
 
-    @SuppressWarnings("unchecked")
     @Override
-    public <S> S getSettingsFor(Guild guild)
-    {
-        if (manager==null)
+    public <S> S getSettingsFor(Guild guild) { 
+        if (manager == null) {
             return null;
-        return (S) manager.getSettings(guild);
-    }
+        }
+        
+        // Get the settings for the guild
+        Object settings = manager.getSettings(guild);
 
+        // Ensure the settings can be safely cast to the required type S
+        if (settings != null) {
+            return (S) settings;  // Safe cast, but we can add a check for the class type if needed
+        }
+
+        return null;
+    }
+     
     @SuppressWarnings("unchecked")
     @Override
-    public <M extends GuildSettingsManager> M getSettingsManager()
-    {
-        return (M) manager;
+    public <M extends GuildSettingsManager<?>> M getSettingsManager() {
+        // Check if manager is an instance of GuildSettingsManager<?> or its subclass
+        if (manager instanceof GuildSettingsManager<?>) {
+            return (M) manager;  // Cast to M, but suppressed for type safety
+        }
+        return null;  // Return null if the cast is not possible
     }
+    
 
     @Override
-    public void shutdown()
-    {
-        GuildSettingsManager<?> manager = getSettingsManager();
-        if(manager != null)
-            manager.shutdown();
-        executor.shutdown();
+    public void shutdown() {
+        GuildSettingsManager<?> settingsManager = getSettingsManager();
+        if (settingsManager != null) {
+            settingsManager.shutdown();
+        }
+
+        if(executor != null) {
+           executor.shutdown();
+        }
     }
 
     @Override
@@ -665,11 +680,11 @@ public class CommandClientImpl implements CommandClient, EventListener
                 if (event.getChannel() instanceof TextChannel) {
                     TextChannel textChannel = (TextChannel) event.getChannel();
                     int messageCount = messages.size();
-                    
-                    if (messages.size() > 1 && event.getGuild().getSelfMember()
+
+                    if (messageCount > 1 && event.getGuild().getSelfMember()
                             .hasPermission(textChannel, Permission.MESSAGE_MANAGE)) {
-                        List<Long> messageIds = messages.stream()
-                            .map(Message::getIdLong)
+                        List<String> messageIds = messages.stream()
+                            .map(m -> String.valueOf(m.getIdLong()))
                             .collect(Collectors.toList());  
                         textChannel.deleteMessagesByIds(messageIds).queue(
                             unused -> {}, 
