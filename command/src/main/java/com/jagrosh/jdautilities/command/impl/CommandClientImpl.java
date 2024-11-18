@@ -50,6 +50,8 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import javax.annotation.Nonnull;
+
 /**
  * An implementation of {@link com.jagrosh.jdautilities.command.CommandClient CommandClient} to be used by a bot.
  * 
@@ -90,7 +92,7 @@ public class CommandClientImpl implements CommandClient, EventListener
     private final String helpWord;
     private final ScheduledExecutorService executor;
     private final AnnotatedModuleCompiler compiler;
-    private final GuildSettingsManager manager;
+    private final GuildSettingsManager<?> manager;
 
     private String textPrefix;
     private CommandListener listener = null;
@@ -106,7 +108,7 @@ public class CommandClientImpl implements CommandClient, EventListener
         if(!SafeIdUtil.checkId(ownerId))
             LOG.warn(String.format("The provided Owner ID (%s) was found unsafe! Make sure ID is a non-negative long!", ownerId));
 
-        if(coOwnerIds!=null)
+        if(coOwnerIds != null)
         {
             for(String coOwnerId : coOwnerIds)
             {
@@ -119,58 +121,72 @@ public class CommandClientImpl implements CommandClient, EventListener
 
         this.ownerId = ownerId;
         this.coOwnerIds = coOwnerIds;
-        this.prefix = prefix==null || prefix.isEmpty() ? DEFAULT_PREFIX : prefix;
-        this.altprefix = altprefix==null || altprefix.isEmpty() ? null : altprefix;
+        this.prefix = prefix == null || prefix.isEmpty() ? DEFAULT_PREFIX : prefix;
+        this.altprefix = altprefix == null || altprefix.isEmpty() ? null : altprefix;
         this.textPrefix = prefix;
         this.activity = activity;
         this.status = status;
         this.serverInvite = serverInvite;
-        this.success = success==null ? "": success;
-        this.warning = warning==null ? "": warning;
-        this.error = error==null ? "": error;
+        this.success = success == null ? "": success;
+        this.warning = warning == null ? "": warning;
+        this.error = error == null ? "": error;
         this.carbonKey = carbonKey;
         this.botsKey = botsKey;
         this.commandIndex = new HashMap<>();
         this.commands = new ArrayList<>();
         this.cooldowns = new HashMap<>();
         this.uses = new HashMap<>();
-        this.linkMap = linkedCacheSize>0 ? new FixedSizeCache<>(linkedCacheSize) : null;
+        this.linkMap = linkedCacheSize > 0 ? new FixedSizeCache<>(linkedCacheSize) : null;
         this.useHelp = useHelp;
         this.shutdownAutomatically = shutdownAutomatically;
-        this.helpWord = helpWord==null ? "help" : helpWord;
-        this.executor = executor==null ? Executors.newSingleThreadScheduledExecutor() : executor;
+        this.helpWord = helpWord == null ? "help" : helpWord;
+        this.executor = executor == null ? Executors.newSingleThreadScheduledExecutor() : executor;
         this.compiler = compiler;
         this.manager = manager;
-        this.helpConsumer = helpConsumer==null ? (event) -> {
-                StringBuilder builder = new StringBuilder("**"+event.getSelfUser().getName()+"** commands:\n");
-                Category category = null;
-                for(Command command : commands)
+
+        this.helpConsumer = (helpConsumer != null) ? helpConsumer : (event) -> {
+            String selfUserName = event.getSelfUser() != null ? event.getSelfUser().getName() : "Unknown User";
+            StringBuilder builder = new StringBuilder("**" + selfUserName + "** commands:\n");
+            Category category = null;
+
+            for (Command command : commands)
+            {
+                if (!command.isHidden() && (!command.isOwnerCommand() || event.isOwner()))
                 {
-                    if(!command.isHidden() && (!command.isOwnerCommand() || event.isOwner()))
+                    if (!Objects.equals(category, command.getCategory()))
                     {
-                        if(!Objects.equals(category, command.getCategory()))
-                        {
-                            category = command.getCategory();
-                            builder.append("\n\n  __").append(category==null ? "No Category" : category.getName()).append("__:\n");
-                        }
-                        builder.append("\n`").append(textPrefix).append(prefix==null?" ":"").append(command.getName())
-                               .append(command.getArguments()==null ? "`" : " "+command.getArguments()+"`")
-                               .append(" - ").append(command.getHelp());
+                        category = command.getCategory();
+                        builder.append("\n\n  __").append(category == null ? "No Category" : category.getName()).append("__:\n");
                     }
+                    
+                    builder.append("\n`")
+                            .append(Objects.toString(textPrefix, ""))
+                            .append(Objects.toString(prefix, " "))
+                            .append(command.getName())
+                            .append(Objects.toString(command.getArguments(), ""))
+                            .append(" - ").append(Objects.toString(command.getHelp(), "No help available"));
                 }
-                User owner = event.getJDA().getUserById(ownerId);
-                if(owner!=null)
-                {
-                    builder.append("\n\nFor additional help, contact **").append(owner.getName()).append("**#").append(owner.getDiscriminator());
-                    if(serverInvite!=null)
-                        builder.append(" or join ").append(serverInvite);
+            }
+            @SuppressWarnings("null")
+            User owner = event.getJDA().getUserById(ownerId);
+            if (owner != null)
+            {
+                builder.append("\n\nFor additional help, contact **").append(owner.getName())
+                       .append("**#").append(owner.getDiscriminator());
+                if (serverInvite != null && !serverInvite.isEmpty()) {
+                   builder.append(" or join ").append(serverInvite);
                 }
-                event.replyInDm(builder.toString(), unused ->
-                {
-                    if(event.isFromType(ChannelType.TEXT))
-                        event.reactSuccess();
-                }, t -> event.replyWarning("Help cannot be sent because you are blocking Direct Messages."));
-        } : helpConsumer;
+            }
+
+            String helpMessage = builder.toString();
+
+            event.replyInDm(helpMessage, unused ->
+            {
+                if(event.isFromType(ChannelType.TEXT)) {
+                    event.reactSuccess();
+                }
+            }, t -> event.replyWarning("Help cannot be sent because you are blocking Direct Messages."));
+        };
 
         // Load commands
         for(Command command : commands)
@@ -433,10 +449,10 @@ public class CommandClientImpl implements CommandClient, EventListener
      
     @SuppressWarnings("unchecked")
     @Override
-    public <M extends GuildSettingsManager<?>> M getSettingsManager() {
+    public GuildSettingsManager<?> getSettingsManager() {
         // Check if manager is an instance of GuildSettingsManager<?> or its subclass
-        if (manager instanceof GuildSettingsManager<?>) {
-            return (M) manager;  // Cast to M, but suppressed for type safety
+        if (manager != null && manager instanceof GuildSettingsManager<?>) {
+            return (GuildSettingsManager<?>) manager;  // Cast to M, but suppressed for type safety
         }
         return null;  // Return null if the cast is not possible
     }
@@ -455,7 +471,7 @@ public class CommandClientImpl implements CommandClient, EventListener
     }
 
     @Override
-    public void onEvent(GenericEvent event)
+    public void onEvent(@Nonnull GenericEvent event)
     {
         if(event instanceof MessageReceivedEvent)
             onMessageReceived((MessageReceivedEvent)event);
